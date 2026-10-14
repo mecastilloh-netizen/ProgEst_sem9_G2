@@ -1,0 +1,223 @@
+﻿<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Organiza los turnos de una cola ingresando nombres con voz o teclado.">
+  <title>Cola de turnos · Nombres</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #eaf6ff; }
+    .hero { background: linear-gradient(135deg,#0d6efd,#084298); }
+    .card { border: 0; border-radius: 1.25rem; }
+    .queue-track { display: flex; align-items: stretch; gap: .75rem; overflow-x: auto; padding: .5rem .25rem 1rem; }
+    .queue-person { flex: 0 0 190px; min-height: 142px; display: flex; flex-direction: column; justify-content: center; text-align: center; }
+    .queue-arrow { flex: 0 0 auto; align-self: center; color: #0d6efd; font-size: 1.6rem; font-weight: 700; }
+    .queue-index { width: 2rem; height: 2rem; display: grid; place-items: center; margin: 0 auto .55rem; border-radius: 50%; background: #eaf2ff; color: #0d6efd; font-weight: 700; }
+    .queue-first { outline: 2px solid #0d6efd; }
+    .voice-overlay { position: fixed; inset: 0; z-index: 1050; display: grid; place-items: center; padding: 1rem; background: rgba(8,34,73,.58); backdrop-filter: blur(5px); }
+    .voice-overlay[hidden] { display: none; }
+    .voice-dialog { width: min(100%, 490px); border-radius: 1.5rem; box-shadow: 0 1.5rem 5rem rgba(0,0,0,.25); }
+    .voice-orb { width: 112px; height: 112px; margin: 0 auto; display: grid; place-items: center; border-radius: 50%; color: white; background: linear-gradient(145deg,#3185ff,#0752c5); box-shadow: 0 12px 32px rgba(13,110,253,.3); }
+    .voice-orb svg { width: 42px; height: 42px; }
+    .voice-orb.is-listening { animation: pulse 1.4s infinite; }
+    .voice-transcript { min-height: 106px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+    @keyframes pulse { 50% { box-shadow: 0 0 0 18px rgba(13,110,253,.1), 0 12px 32px rgba(13,110,253,.3); transform: scale(1.04); } }
+  </style>
+</head>
+<body>
+<header class="hero text-white py-5 shadow">
+  <div class="container">
+    <span class="badge rounded-pill bg-white text-primary mb-3 px-3 py-2">ESTRUCTURA DE DATOS · FIFO</span>
+    <h1 class="display-5 fw-bold mb-2">Cola de turnos</h1>
+    <p class="lead mb-0">Agrega nombres y organiza quién sigue.</p>
+  </div>
+</header>
+<main class="container py-4 py-lg-5">
+  <div id="notice" class="alert d-none rounded-4 shadow-sm" role="status" aria-live="polite"></div>
+  <div class="row g-4">
+    <section class="col-lg-8" aria-labelledby="queue-title">
+      <div class="card shadow-sm mb-4">
+        <div class="card-body p-4 p-lg-5">
+          <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
+            <div><p class="text-primary text-uppercase small fw-bold mb-1">Nuevo turno</p><h2 id="queue-title" class="h3 fw-bold text-primary">Ingresa un nombre</h2></div>
+            <button id="read-question" class="btn btn-outline-primary rounded-pill" type="button" aria-label="Leer indicación en voz alta" title="Leer indicación">🗣️</button>
+          </div>
+          <form id="name-form">
+            <label for="name-input" class="form-label fw-semibold">Nombre de la persona</label>
+            <div class="input-group input-group-lg">
+              <input id="name-input" name="nombre" class="form-control" maxlength="80" autocomplete="name" placeholder="Escribe o dicta un nombre" required>
+              <button id="voice-button" class="btn btn-outline-primary" type="button" aria-label="Dictar nombre" title="Dictar nombre">🎙️</button>
+              <button id="add-button" class="btn btn-primary" type="submit">Agregar a la cola</button>
+            </div>
+            <div class="form-text">Solo se guardan nombres. El dictado requiere permiso para usar el micrófono.</div>
+          </form>
+        </div>
+      </div>
+
+      <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
+        <div><p class="text-primary text-uppercase small fw-bold mb-1">Orden de atención</p><h2 class="h3 fw-bold text-primary mb-0">Personas en la cola</h2></div>
+        <span id="queue-count" class="badge rounded-pill text-bg-primary">0 personas</span>
+      </div>
+      <div id="empty-state" class="card shadow-sm"><div class="card-body p-5 text-center"><div class="display-5 mb-2" aria-hidden="true">👥</div><p class="text-body-secondary mb-0">La cola está vacía. Agrega el primer nombre para iniciar los turnos.</p></div></div>
+      <div id="queue-panel" class="card shadow-sm d-none">
+        <div class="card-body p-3 p-md-4">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+            <div><span class="badge rounded-pill text-bg-primary">PRÓXIMO TURNO</span><p class="small text-body-secondary mb-0 mt-2">La fila avanza de izquierda a derecha.</p></div>
+            <div class="d-flex gap-2"><button id="serve-button" class="btn btn-primary rounded-pill" type="button">Atender siguiente</button><button id="clear-button" class="btn btn-outline-primary rounded-pill" type="button">Vaciar cola</button></div>
+          </div>
+          <div id="queue-track" class="queue-track" aria-live="polite" aria-label="Nombres en orden de turno"></div>
+          <div class="d-flex justify-content-between small text-body-secondary"><span>← Frente de la cola</span><span>Final de la cola →</span></div>
+        </div>
+      </div>
+    </section>
+    <aside class="col-lg-4">
+      <div class="card shadow-sm mb-4"><div class="card-body p-4"><span class="badge rounded-pill text-bg-primary mb-3">¿CÓMO FUNCIONA?</span><h2 class="h5 fw-bold text-primary">Primero en llegar, primero en pasar</h2><p class="text-body-secondary mb-0">Cada nombre se agrega al final de la fila. Al atender el siguiente turno, sale la primera persona.</p></div></div>
+      <div class="card shadow-sm bg-primary text-white"><div class="card-body p-4"><div class="fs-2 mb-2" aria-hidden="true">🎙️</div><h2 class="h5 fw-bold">Agrega nombres con voz</h2><p class="mb-0 opacity-75">Pulsa el micrófono, dicta el nombre y revisa el texto en la ventana antes de confirmar.</p></div></div>
+    </aside>
+  </div>
+</main>
+<footer class="container pb-4 text-center text-body-secondary small">La cola se conserva durante esta sesión del navegador.</footer>
+
+<div id="voice-overlay" class="voice-overlay" hidden>
+  <section class="voice-dialog bg-white p-4 p-sm-5 text-center" role="dialog" aria-modal="true" aria-labelledby="voice-title" aria-describedby="voice-help">
+    <button id="voice-close" type="button" class="btn-close float-end" aria-label="Cerrar dictado"></button><div class="clearfix"></div>
+    <div id="voice-orb" class="voice-orb my-3" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/></svg></div>
+    <span id="device-badge" class="badge rounded-pill text-bg-secondary mb-2">Comprobando micrófono…</span>
+    <h2 id="voice-title" class="h4 fw-bold text-primary">Dicta un nombre</h2><p id="voice-help" class="text-body-secondary mb-3">El nombre reconocido aparecerá aquí.</p>
+    <div id="voice-transcript" class="voice-transcript border rounded-4 bg-light p-3 text-start mb-3" aria-live="polite">Esperando permiso para usar el micrófono…</div>
+    <div class="d-flex justify-content-center gap-2"><button id="voice-stop" type="button" class="btn btn-outline-primary rounded-pill px-4" disabled>Terminar dictado</button><button id="voice-use" type="button" class="btn btn-primary rounded-pill px-4" disabled>Usar nombre</button></div>
+  </section>
+</div>
+<script>
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const overlay = document.getElementById('voice-overlay');
+  const transcript = document.getElementById('voice-transcript');
+  const voiceHelp = document.getElementById('voice-help');
+  const deviceBadge = document.getElementById('device-badge');
+  const voiceOrb = document.getElementById('voice-orb');
+  const stopButton = document.getElementById('voice-stop');
+  const useButton = document.getElementById('voice-use');
+  const nameInput = document.getElementById('name-input');
+  const notice = document.getElementById('notice');
+  let recognition = null;
+  let microphoneStream = null;
+  let dictatedName = '';
+  let interimName = '';
+  let closing = false;
+
+  function notify(message, type='success') { notice.textContent = message; notice.className = `alert alert-${type} rounded-4 shadow-sm`; }
+  function renderDictation() {
+    const text = [dictatedName, interimName].filter(Boolean).join(' ').trim();
+    transcript.textContent = text || 'Te escucho… di un nombre.';
+    useButton.disabled = !dictatedName.trim();
+  }
+  function stopTracks() {
+    if (microphoneStream) microphoneStream.getTracks().forEach(track => track.stop());
+    microphoneStream = null;
+  }
+  function finishRecognition() {
+    recognition = null;
+    stopTracks();
+    voiceOrb.classList.remove('is-listening');
+    stopButton.disabled = true;
+    if (dictatedName.trim()) {
+      voiceHelp.textContent = 'Dictado terminado. Revisa el nombre y pulsa «Usar nombre».';
+      renderDictation();
+    }
+    if (closing) { overlay.hidden = true; closing = false; }
+  }
+  function finishDictation() {
+    if (recognition) { try { recognition.stop(); } catch (_) { finishRecognition(); } }
+    else finishRecognition();
+  }
+  async function startDictation() {
+    if (!Recognition) { notify('Este navegador no admite dictado por voz. Escribe el nombre en el campo.', 'warning'); return; }
+    if (!navigator.mediaDevices?.getUserMedia) { notify('El navegador necesita localhost o HTTPS para acceder al micrófono.', 'warning'); return; }
+    if (recognition || microphoneStream) finishDictation();
+    dictatedName = ''; interimName = ''; closing = false;
+    overlay.hidden = false;
+    transcript.textContent = 'Esperando permiso para usar el micrófono…';
+    voiceHelp.textContent = 'Confirma el permiso si el navegador lo solicita.';
+    deviceBadge.className = 'badge rounded-pill text-bg-secondary mb-2'; deviceBadge.textContent = 'Comprobando micrófono…';
+    voiceOrb.classList.remove('is-listening'); stopButton.disabled = true; useButton.disabled = true;
+    try {
+      microphoneStream = await navigator.mediaDevices.getUserMedia({audio:true});
+      const inputs = (await navigator.mediaDevices.enumerateDevices()).filter(device => device.kind === 'audioinput');
+      deviceBadge.className = 'badge rounded-pill text-bg-success mb-2';
+      deviceBadge.textContent = inputs.length > 1 ? `Micrófono detectado · ${inputs.length} disponibles` : 'Micrófono detectado';
+      voiceHelp.textContent = `Usando ${inputs[0]?.label || 'el micrófono predeterminado'}. Di un nombre.`;
+      recognition = new Recognition(); recognition.lang = 'es-NI'; recognition.continuous = true; recognition.interimResults = true;
+      recognition.onstart = () => { voiceOrb.classList.add('is-listening'); stopButton.disabled = false; };
+      recognition.onresult = event => {
+        interimName = '';
+        for (let i=event.resultIndex; i<event.results.length; i++) {
+          const phrase = event.results[i][0].transcript.trim();
+          if (event.results[i].isFinal) dictatedName = [dictatedName, phrase].filter(Boolean).join(' ');
+          else interimName = [interimName, phrase].filter(Boolean).join(' ');
+        }
+        renderDictation();
+      };
+      recognition.onerror = event => {
+        const messages = {'not-allowed':'Permiso denegado. Activa el micrófono en los permisos del sitio.','audio-capture':'No se encontró un micrófono para grabar.','network':'El reconocimiento de voz necesita conexión a internet.','no-speech':'No se detectó voz. Inténtalo otra vez.'};
+        const message = messages[event.error] || `No se pudo reconocer la voz (${event.error}).`;
+        deviceBadge.className = 'badge rounded-pill text-bg-danger mb-2'; deviceBadge.textContent = 'Revisa el micrófono';
+        voiceHelp.textContent = message; transcript.textContent = message;
+      };
+      recognition.onend = finishRecognition; recognition.start();
+    } catch (error) {
+      stopTracks(); recognition = null;
+      const message = error.name === 'NotAllowedError' ? 'No se concedió permiso para usar el micrófono.' : error.name === 'NotFoundError' ? 'No se detectó ningún micrófono conectado.' : 'No se pudo activar el micrófono. Comprueba la conexión y los permisos.';
+      deviceBadge.className = 'badge rounded-pill text-bg-danger mb-2'; deviceBadge.textContent = 'Micrófono no disponible'; voiceHelp.textContent = message; transcript.textContent = message;
+    }
+  }
+  function renderQueue(names) {
+    const panel = document.getElementById('queue-panel');
+    const empty = document.getElementById('empty-state');
+    const track = document.getElementById('queue-track');
+    document.getElementById('queue-count').textContent = `${names.length} ${names.length === 1 ? 'persona' : 'personas'}`;
+    track.replaceChildren();
+    empty.classList.toggle('d-none', names.length > 0);
+    panel.classList.toggle('d-none', names.length === 0);
+    names.forEach((name, index) => {
+      if (index > 0) { const arrow = document.createElement('span'); arrow.className = 'queue-arrow'; arrow.setAttribute('aria-hidden','true'); arrow.textContent = '→'; track.append(arrow); }
+      const card = document.createElement('article'); card.className = `queue-person card shadow-sm ${index === 0 ? 'queue-first' : ''}`;
+      const body = document.createElement('div'); body.className = 'card-body p-3';
+      const number = document.createElement('span'); number.className = 'queue-index'; number.textContent = String(index + 1);
+      const person = document.createElement('div'); person.className = 'fw-bold text-primary text-break'; person.textContent = name;
+      const label = document.createElement('small'); label.className = 'text-body-secondary mt-1'; label.textContent = index === 0 ? 'Siguiente turno' : 'En espera';
+      body.append(number, person, label); card.append(body); track.append(card);
+    });
+  }
+  async function loadQueue() { const response = await fetch('/api/cola'); const data = await response.json(); renderQueue(data.nombres); }
+
+  document.getElementById('voice-button').addEventListener('click', startDictation);
+  stopButton.addEventListener('click', finishDictation);
+  document.getElementById('voice-close').addEventListener('click', () => { closing = true; finishDictation(); });
+  overlay.addEventListener('click', event => { if (event.target === overlay) { closing = true; finishDictation(); } });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && !overlay.hidden) { closing = true; finishDictation(); } });
+  useButton.addEventListener('click', () => { nameInput.value = dictatedName.trim(); overlay.hidden = true; nameInput.focus(); });
+  document.getElementById('read-question').addEventListener('click', () => {
+    if (!('speechSynthesis' in window)) { notify('Este navegador no admite lectura en voz alta.', 'warning'); return; }
+    window.speechSynthesis.cancel(); const utterance = new SpeechSynthesisUtterance('Ingresa el nombre de la persona.'); utterance.lang = 'es-NI'; window.speechSynthesis.speak(utterance);
+  });
+  document.getElementById('name-form').addEventListener('submit', async event => {
+    event.preventDefault(); const name = nameInput.value.trim(); if (!name) return;
+    try {
+      const response = await fetch('/api/cola', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({nombre:name})});
+      const data = await response.json(); if (!response.ok) throw new Error(data.error || 'No se pudo agregar el nombre.');
+      renderQueue(data.nombres); nameInput.value = ''; nameInput.focus(); notify(data.mensaje);
+    } catch (error) { notify(error.message, 'danger'); }
+  });
+  document.getElementById('serve-button').addEventListener('click', async () => {
+    try { const response = await fetch('/api/cola/atender', {method:'POST'}); const data = await response.json(); if (!response.ok) throw new Error(data.error); renderQueue(data.nombres); notify(data.mensaje); }
+    catch (error) { notify(error.message, 'warning'); }
+  });
+  document.getElementById('clear-button').addEventListener('click', async () => {
+    try { const response = await fetch('/api/cola/limpiar', {method:'POST'}); const data = await response.json(); renderQueue(data.nombres); notify(data.mensaje); }
+    catch (_) { notify('No se pudo vaciar la cola.', 'danger'); }
+  });
+  loadQueue().catch(() => notify('No se pudo cargar la cola.', 'danger'));
+</script>
+</body>
+</html>
