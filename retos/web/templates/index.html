@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gestor de solicitudes</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #f4f7fb; color: #183047; }
+    .page-header { background: linear-gradient(115deg, #16324f, #176b81); color: white; border-radius: 1.25rem; }
+    .card { border: 1px solid #e1e9f0; border-radius: 1rem; }
+    .stat-number { font-size: 2rem; font-weight: 700; line-height: 1.1; }
+    .table td, .table th { vertical-align: middle; }
+    .aviso-archivo { display: none; }
+    .archivo-local main { display: none; }
+    .archivo-local .aviso-archivo { display: block; }
+  </style>
+  <script>
+    if (location.protocol === 'file:') document.documentElement.classList.add('archivo-local');
+  </script>
+</head>
+<body>
+  <div class="aviso-archivo container py-5">
+    <div class="alert alert-primary shadow-sm" role="alert">
+      <h1 class="h4">Abre la aplicación con Flask</h1>
+      <p>Esta plantilla necesita el servidor para mostrar las solicitudes y procesar los formularios.</p>
+      <p>En esta carpeta ejecuta <code>.\.venv\Scripts\python.exe app.py</code> y después abre
+        <a href="http://127.0.0.1:5000/">http://127.0.0.1:5000/</a>.</p>
+    </div>
+  </div>
+  <main class="container py-4 py-md-5">
+    <header class="page-header p-4 p-md-5 mb-4 shadow-sm">
+      <p class="text-uppercase small fw-semibold mb-2">Pilas y colas · práctica web</p>
+      <h1 class="display-6 fw-bold mb-2">Gestor de solicitudes</h1>
+      <p class="mb-0 opacity-75">Registra, atiende y restaura solicitudes desde un solo lugar.</p>
+    </header>
+
+    {% for categoria, mensaje in get_flashed_messages(with_categories=true) %}
+      <div class="alert alert-{{ categoria }} alert-dismissible fade show" role="alert">
+        {{ mensaje }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+      </div>
+    {% endfor %}
+
+    <section class="row g-3 mb-4" aria-label="Estadísticas">
+      <div class="col-sm-4"><div class="card h-100 shadow-sm"><div class="card-body"><p class="text-secondary mb-1">Pendientes</p><div class="stat-number text-primary">{{ estadisticas.pendientes }}</div></div></div></div>
+      <div class="col-sm-4"><div class="card h-100 shadow-sm"><div class="card-body"><p class="text-secondary mb-1">Atendidas</p><div class="stat-number text-success">{{ estadisticas.atendidas }}</div></div></div></div>
+      <div class="col-sm-4"><div class="card h-100 shadow-sm"><div class="card-body"><p class="text-secondary mb-1">Solicitudes activas</p><div class="stat-number">{{ estadisticas.total }}</div></div></div></div>
+    </section>
+
+    <div class="row g-4 mb-4">
+      <section class="col-lg-7" aria-labelledby="registro-titulo">
+        <div class="card h-100 shadow-sm">
+          <div class="card-body p-4">
+            <h2 id="registro-titulo" class="h4 mb-3">Nueva solicitud</h2>
+            <form method="post" action="{{ url_for('registrar') }}" class="row g-3">
+              <div class="col-md-5">
+                <label for="cliente" class="form-label">Cliente</label>
+                <input id="cliente" name="cliente" class="form-control" maxlength="100" required>
+              </div>
+              <div class="col-md-7">
+                <label for="asunto" class="form-label">Asunto</label>
+                <input id="asunto" name="asunto" class="form-control" maxlength="200" required>
+              </div>
+              <div class="col-12"><button class="btn btn-primary">Registrar solicitud</button></div>
+            </form>
+          </div>
+        </div>
+      </section>
+      <section class="col-lg-5" aria-labelledby="turno-titulo">
+        <div class="card h-100 shadow-sm">
+          <div class="card-body p-4 d-flex flex-column">
+            <h2 id="turno-titulo" class="h4 mb-3">Siguiente turno</h2>
+            {% if siguiente %}
+              <p class="mb-1"><span class="badge text-bg-primary">#{{ siguiente.id }}</span></p>
+              <p class="fs-5 fw-semibold mb-1">{{ siguiente.cliente }}</p>
+              <p class="text-secondary mb-3">{{ siguiente.asunto }}</p>
+            {% else %}
+              <p class="text-secondary mb-3">No hay solicitudes en espera.</p>
+            {% endif %}
+            <form method="post" action="{{ url_for('atender') }}" class="mt-auto">
+              <button class="btn btn-success" {% if not siguiente %}disabled{% endif %}>Atender siguiente</button>
+            </form>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <section class="card shadow-sm mb-4" aria-labelledby="busqueda-titulo">
+      <div class="card-body p-4">
+        <h2 id="busqueda-titulo" class="h4 mb-3">Buscar por ID</h2>
+        <form method="get" action="{{ url_for('buscar') }}" class="row g-2 align-items-end">
+          <div class="col-sm-5">
+            <label for="buscar-id" class="form-label">ID de la solicitud</label>
+            <input id="buscar-id" name="id" type="number" min="1" step="1" class="form-control" value="{{ busqueda_id|default('') }}" required>
+          </div>
+          <div class="col-sm-auto"><button class="btn btn-outline-primary">Buscar</button></div>
+        </form>
+        {% if busqueda_error is defined %}
+          <div class="alert alert-warning mt-3 mb-0" role="status">{{ busqueda_error }}</div>
+        {% elif busqueda_realizada is defined %}
+          {% if busqueda %}
+            <div class="alert alert-info mt-3 mb-0" role="status">
+              <strong>#{{ busqueda.id }} · {{ busqueda_estado }}</strong><br>
+              {{ busqueda.cliente }} — {{ busqueda.asunto }}
+            </div>
+          {% else %}
+            <div class="alert alert-secondary mt-3 mb-0" role="status">No se encontró la solicitud #{{ busqueda_id }}.</div>
+          {% endif %}
+        {% endif %}
+      </div>
+    </section>
+
+    <div class="row g-4">
+      <section class="col-lg-7" aria-labelledby="pendientes-titulo">
+        <div class="card h-100 shadow-sm">
+          <div class="card-body p-4">
+            <h2 id="pendientes-titulo" class="h4 mb-1">Pendientes <span class="badge text-bg-primary fs-6">FIFO</span></h2>
+            <p class="text-secondary small">Se atienden en el orden de llegada.</p>
+            <div class="table-responsive">
+              <table class="table table-hover mb-0">
+                <thead><tr><th scope="col">ID</th><th scope="col">Cliente</th><th scope="col">Asunto</th><th scope="col">Acción</th></tr></thead>
+                <tbody>
+                  {% for item in pendientes %}
+                    <tr>
+                      <td>#{{ item.id }}</td><td>{{ item.cliente }}</td><td>{{ item.asunto }}</td>
+                      <td><form method="post" action="{{ url_for('cancelar', identificador=item.id) }}"><button class="btn btn-sm btn-outline-danger" aria-label="Cancelar solicitud {{ item.id }}">Cancelar</button></form></td>
+                    </tr>
+                  {% else %}
+                    <tr><td colspan="4" class="text-secondary py-4">No hay solicitudes pendientes.</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="col-lg-5" aria-labelledby="historial-titulo">
+        <div class="card h-100 shadow-sm">
+          <div class="card-body p-4">
+            <h2 id="historial-titulo" class="h4 mb-1">Historial <span class="badge text-bg-success fs-6">LIFO</span></h2>
+            <p class="text-secondary small">La última atención se deshace primero.</p>
+            <ul class="list-group mb-3">
+              {% for item in historial %}
+                <li class="list-group-item"><span class="fw-semibold">#{{ item.id }} · {{ item.cliente }}</span><br><span class="text-secondary small">{{ item.asunto }}</span></li>
+              {% else %}
+                <li class="list-group-item text-secondary">Todavía no hay atenciones.</li>
+              {% endfor %}
+            </ul>
+            <form method="post" action="{{ url_for('deshacer') }}" class="mb-3">
+              <button class="btn btn-outline-warning text-dark" {% if not estadisticas.atendidas %}disabled{% endif %}>Deshacer última</button>
+            </form>
+            <form method="post" action="{{ url_for('deshacer_varias') }}" class="row g-2 align-items-end">
+              <div class="col-sm-7">
+                <label for="cantidad" class="form-label">Deshacer varias</label>
+                <input id="cantidad" name="cantidad" type="number" min="1" step="1" class="form-control" placeholder="Cantidad" required>
+              </div>
+              <div class="col-sm-5"><button class="btn btn-warning w-100" {% if not estadisticas.atendidas %}disabled{% endif %}>Restaurar</button></div>
+            </form>
+          </div>
+        </div>
+      </section>
+    </div>
+    <p class="text-secondary small mt-4 mb-0">Datos temporales en memoria para uso local de aprendizaje.</p>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
